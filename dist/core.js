@@ -16,3 +16,30 @@ export function demo(){const debtId=uid();const entry=(amount,kind,category,note
 export function putEntry(s,entry){if(!Number.isSafeInteger(entry.amount)||entry.amount<=0)throw Error('Проверьте сумму');const next=s.entries.filter(e=>e.id!==entry.id).concat(entry);if(entry.debtId){const test={...s,entries:next};if(remaining(test,entry.debtId)<0)throw Error('Возврат превышает сумму долга')}s.entries=next}
 export function removeEntry(s,id){const entry=s.entries.find(e=>e.id===id);const next=s.entries.filter(e=>e.id!==id);if(entry?.debtId&&remaining({...s,entries:next},entry.debtId)<0)throw Error('Сначала измените или удалите возвраты этого долга');if(entry?.planId){const plan=s.plans.find(p=>p.id===entry.planId);if(plan&&entry.planDate){plan.date=entry.planDate;plan.anchor=entry.planAnchor;plan.paid=false}}s.entries=next}
 export function payPlan(s,id,amount){const p=s.plans.find(p=>p.id===id);if(!p||p.paid)throw Error('Этот план уже оплачен');if(p.monthly&&!isReminder(p))throw Error('Этот период уже оплачен. Напомним за 10 дней до следующего платежа.');putEntry(s,{id:uid(),amount,kind:'expense',category:p.category||'📅 Платежи',note:p.title,date:day(),created:Date.now(),planId:p.id,planDate:p.date,planAnchor:p.anchor});if(p.monthly)p.date=nextMonth(p.date,p.anchor);else p.paid=true}
+
+// Reports are calculated from the ledger; carryover is never an income entry.
+export const monthKey=date=>date.slice(0,7);
+export const currentMonth=()=>monthKey(day());
+export function monthlyReport(s,month){
+ const entries=s.entries.filter(e=>monthKey(e.date)===month).sort((a,b)=>b.date.localeCompare(a.date)||(b.created||0)-(a.created||0));
+ const opening=s.opening+s.entries.filter(e=>monthKey(e.date)<month).reduce((n,e)=>n+sign(e.kind)*e.amount,0);
+ const income=entries.filter(e=>e.kind==='income').reduce((n,e)=>n+e.amount,0);
+ const expense=entries.filter(e=>e.kind==='expense').reduce((n,e)=>n+e.amount,0);
+ const debtIn=entries.filter(e=>['borrowed','returned'].includes(e.kind)).reduce((n,e)=>n+e.amount,0);
+ const debtOut=entries.filter(e=>['lent','repaid'].includes(e.kind)).reduce((n,e)=>n+e.amount,0);
+ return {month,entries,opening,income,expense,debtIn,debtOut,closing:opening+income-expense+debtIn-debtOut};
+}
+export function reportMonths(s){
+ const months=[currentMonth(),s.reportStart||currentMonth(),...s.entries.map(e=>monthKey(e.date))].sort();
+ const first=months[0],last=months.at(-1),result=[];let [y,m]=first.split('-').map(Number);
+ while(`${y}-${String(m).padStart(2,'0')}`<=last){result.push(`${y}-${String(m).padStart(2,'0')}`);if(++m===13){y++;m=1}}
+ return result.reverse();
+}
+export function searchEntries(s,query='',type='all',month=''){
+ const normalize=text=>String(text||'').toLocaleLowerCase('ru').replace(/ё/g,'е');
+ const words=normalize(query).trim().split(/\s+/).filter(Boolean);
+ return s.entries.filter(e=>!month||monthKey(e.date)===month).filter(e=>type==='all'||(type==='debt'?['lent','borrowed','returned','repaid'].includes(e.kind):e.kind===type)).filter(e=>{
+ const person=s.debts.find(d=>d.id===e.debtId)?.person||'';
+ const text=normalize([e.category,e.note,e.date,person].join(' '));return words.every(w=>text.includes(w));
+ }).sort((a,b)=>b.date.localeCompare(a.date)||(b.created||0)-(a.created||0));
+}
