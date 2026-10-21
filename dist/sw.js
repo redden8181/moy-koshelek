@@ -1,5 +1,5 @@
-const CACHE='wallet-shell-v6';
-const ASSETS=['./','./index.html','./style.css?v=6','./app.js?v=6','./core.js?v=6','./manifest.webmanifest','./icon-glass-180.png','./icon-glass-192.png','./icon-glass-512.png'];
+const CACHE='wallet-shell-v7';
+const ASSETS=['./','./index.html','./style.css?v=7','./app.js?v=7','./core.js?v=7','./manifest.webmanifest','./icon-glass-180.png','./icon-glass-192.png','./icon-glass-512.png'];
 self.addEventListener('install',e=>e.waitUntil(caches.open(CACHE).then(c=>c.addAll(ASSETS)).then(()=>self.skipWaiting())));
 self.addEventListener('activate',e=>e.waitUntil(caches.keys().then(keys=>Promise.all(keys.filter(k=>k.startsWith('wallet-shell-')&&k!==CACHE).map(k=>caches.delete(k)))).then(()=>self.clients.claim())));
 self.addEventListener('fetch',e=>{

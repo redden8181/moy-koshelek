@@ -43,3 +43,33 @@ export function searchEntries(s,query='',type='all',month=''){
  const text=normalize([e.category,e.note,e.date,person].join(' '));return words.every(w=>text.includes(w));
  }).sort((a,b)=>b.date.localeCompare(a.date)||(b.created||0)-(a.created||0));
 }
+
+export function debtSummary(s,id){
+ const entries=s.entries.filter(e=>e.debtId===id);
+ const issued=entries.filter(e=>['lent','borrowed'].includes(e.kind)).sort((a,b)=>a.date.localeCompare(b.date)||(a.created||0)-(b.created||0));
+ const repayments=entries.filter(e=>['returned','repaid'].includes(e.kind)).sort((a,b)=>a.date.localeCompare(b.date)||(a.created||0)-(b.created||0));
+ const principal=issued.reduce((sum,e)=>sum+e.amount,0),returned=repayments.reduce((sum,e)=>sum+e.amount,0);
+ return {principal,returned,remaining:principal-returned,date:issued[0]?.date||entries[0]?.date||'',note:issued[0]?.note||'',closedDate:principal>0&&principal===returned?repayments.at(-1)?.date||'':'',entries,issued};
+}
+export function editDebt(s,id,values){
+ const debt=s.debts.find(d=>d.id===id);if(!debt)throw Error('Долг не найден');
+ const person=String(values.person||'').trim();if(!person)throw Error('Укажите имя');
+ if(!Number.isSafeInteger(values.amount)||values.amount<=0)throw Error('Проверьте сумму долга');
+ const summary=debtSummary(s,id);
+ if(values.amount<summary.returned)throw Error('Сумма долга не может быть меньше уже возвращённой суммы');
+ const first=summary.issued[0],otherPrincipal=summary.principal-(first?.amount||0),firstAmount=values.amount-otherPrincipal;
+ if(firstAmount<=0)throw Error('Сумма меньше дополнительных выдач. Измените отдельные операции этого долга');
+ const entries=s.entries.map(e=>{
+  if(e.debtId!==id)return e;
+  const principal=['lent','borrowed'].includes(e.kind);
+  const edited={...e,category:'🤝 '+person,kind:principal?(values.lent?'lent':'borrowed'):(values.lent?'returned':'repaid')};
+  if(e.id===first?.id){edited.amount=firstAmount;edited.date=values.date;edited.note=values.note||''}
+  return edited;
+ });
+ if(!first)entries.push({id:uid(),amount:values.amount,kind:values.lent?'lent':'borrowed',date:values.date,category:'🤝 '+person,note:values.note||'',debtId:id,created:Date.now()});
+ s.entries=entries;s.debts=s.debts.map(d=>d.id===id?{...d,person,lent:values.lent}:d);
+}
+export function deleteDebt(s,id){
+ s.entries=s.entries.filter(e=>e.debtId!==id);
+ s.debts=s.debts.filter(d=>d.id!==id);
+}
